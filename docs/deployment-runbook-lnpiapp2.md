@@ -47,7 +47,7 @@ openssl rand -hex 32
 
 When using a production DB outside Docker:
 
-1. **Do not use the Compose `db` service** for runtime.
+1. **Do not use the Compose `db` service** for runtime. In `docker-compose.yml`, `db` is behind the **`local-db` profile** and is **not** started unless you pass `--profile local-db`.
 2. Ensure the DB user has permissions on your production schema (`SELECT/INSERT/UPDATE/DELETE/CREATE/ALTER`).
 3. Ensure network access from app host to DB host on `3306` (or your DB port).
 4. Set `DATABASE_URL` in `.env.production` with URL-encoded password if it contains special characters.
@@ -81,6 +81,14 @@ PY
 
 ```bash
 docker compose -f docker-compose.yml -f docker-compose.prod.yml --env-file .env.production up -d --build backend frontend
+```
+
+**Local dev with the bundled MariaDB** (optional):
+
+```bash
+docker compose --profile local-db up -d db
+# then start backend (same terminal / same project directory):
+docker compose up -d backend frontend
 ```
 
 If you previously ran the local db container, remove it from this stack:

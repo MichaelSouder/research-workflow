@@ -7,18 +7,22 @@ Auth: (1) MCP_API_KEY / MCP_API_KEYS env keys, or (2) datastore MCP API keys (Pl
 
 from __future__ import annotations
 
+import inspect
 import json
 import logging
 import os
 import time
 from dataclasses import dataclass
-from typing import Any, Optional
-
-logger = logging.getLogger(__name__)
+from typing import Any, Callable, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 
+from ai.proxy import invoke_and_mock
+from ai.proxy.defaults import SENSITIVE_TOOLS
+from ai.proxy_env import data_proxy_request_context, env_key_data_proxy_default
 from backend.datastore.base import Datastore, User
+
+logger = logging.getLogger(__name__)
 
 MCP_API_KEY_ENV = "MCP_API_KEY"
 MCP_API_KEYS_ENV = "MCP_API_KEYS"
@@ -56,6 +60,8 @@ class McpToolAuth:
     from_env: bool
     key_source: str  # "env" | "database"
     key_prefix_display: str
+    """When True, sensitive tools use server-side data proxy (same behavior as MCP_DATA_PROXY_ENABLED)."""
+    data_proxy_enabled: bool
 
 
 def _append_auth_failure_log(store: Datastore, status_code: int, detail: str) -> None:
@@ -99,6 +105,7 @@ def authenticate_mcp_tool_request(request: Request) -> McpToolAuth:
             from_env=True,
             key_source="env",
             key_prefix_display="env",
+            data_proxy_enabled=env_key_data_proxy_default(),
         )
 
     resolved = store.resolve_mcp_api_key_secret(token) if token else None
@@ -113,6 +120,8 @@ def authenticate_mcp_tool_request(request: Request) -> McpToolAuth:
             _append_auth_failure_log(store, 403, d)
             raise HTTPException(status_code=403, detail=d)
         store.touch_mcp_api_key_last_used(key_id)
+        owner = store.get_user_by_id(owner_user_id)
+        proxy_on = owner.tool_api_data_proxy_enabled if owner else True
         set_context(store, user)
         return McpToolAuth(
             store=store,
@@ -123,6 +132,7 @@ def authenticate_mcp_tool_request(request: Request) -> McpToolAuth:
             from_env=False,
             key_source="database",
             key_prefix_display=prefix or (key_id[:8] + "…"),
+            data_proxy_enabled=proxy_on,
         )
 
     if not env_keys and not store.has_active_mcp_api_keys():
@@ -143,6 +153,16 @@ def _tool_allowed(auth: McpToolAuth, tool_name: str) -> bool:
     if not auth.scopes:
         return True
     return tool_name in auth.scopes
+
+
+def _arguments_for_tool_fn(fn: Callable[..., Any], arguments: dict) -> dict:
+    """Drop keys the tool implementation does not accept (e.g. study_id for qual_studies_list)."""
+    try:
+        sig = inspect.signature(fn)
+    except (TypeError, ValueError):
+        return dict(arguments)
+    names = set(sig.parameters.keys())
+    return {k: v for k, v in arguments.items() if k in names}
 
 
 def _study_allowed(auth: McpToolAuth, study_id: Optional[str]) -> bool:
@@ -356,8 +376,13 @@ async def invoke_tool(
         )
         mod, fn_name = _TOOL_MAP[tool_name]
         fn = getattr(mod, fn_name)
+        call_args = _arguments_for_tool_fn(fn, arguments)
         try:
-            result = fn(**arguments)
+            with data_proxy_request_context(auth.data_proxy_enabled):
+                if auth.data_proxy_enabled and tool_name in SENSITIVE_TOOLS:
+                    result = invoke_and_mock(tool_name, **call_args)
+                else:
+                    result = fn(**call_args)
         except TypeError as e:
             _append_invocation_log(
                 auth.store,

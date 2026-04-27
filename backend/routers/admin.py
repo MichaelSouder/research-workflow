@@ -13,7 +13,6 @@ from backend.roles import normalize_study_role_write
 from backend.routers.auth import get_current_user
 from backend.routers.studies import get_datastore
 
-
 router = APIRouter(prefix="/api", tags=["admin"])
 
 
@@ -24,6 +23,7 @@ def _user_api_dict(u: User) -> dict:
         "name": u.name,
         "isSuperuser": u.is_superuser,
         "hasPassword": bool(u.password_hash),
+        "toolApiDataProxy": u.tool_api_data_proxy_enabled,
     }
 
 
@@ -80,6 +80,7 @@ def create_platform_user(
 
 class AdminPatchUserBody(BaseModel):
     is_superuser: Optional[bool] = None
+    tool_api_data_proxy: Optional[bool] = None
     name: Optional[str] = Field(None, max_length=255)
     email: Optional[str] = Field(None, min_length=3, max_length=255)
     password: Optional[str] = None
@@ -100,7 +101,14 @@ def patch_platform_user(
         raise HTTPException(status_code=404, detail="User not found.")
     if all(
         v is None
-        for v in (body.is_superuser, body.name, body.email, body.password, body.clear_password)
+        for v in (
+            body.is_superuser,
+            body.tool_api_data_proxy,
+            body.name,
+            body.email,
+            body.password,
+            body.clear_password,
+        )
     ):
         raise HTTPException(status_code=400, detail="No changes provided.")
     if body.password is not None and body.clear_password:
@@ -124,6 +132,9 @@ def patch_platform_user(
 
     if body.is_superuser is not None:
         store.set_user_superuser(target_user_id, body.is_superuser)
+
+    if body.tool_api_data_proxy is not None:
+        store.set_user_tool_api_data_proxy(target_user_id, body.tool_api_data_proxy)
 
     if body.clear_password:
         try:
@@ -292,6 +303,11 @@ class PatchMcpApiKeyBody(BaseModel):
     clear_expires_at: bool = False  # rejected — expiry cannot be removed
     allowed_study_ids: Optional[list[str]] = None
     clear_allowed_study_ids: bool = False
+    owner_user_id: Optional[str] = Field(
+        default=None,
+        max_length=64,
+        description="Set human owner (user id); required for Integrations zip when wrong user was chosen at create.",
+    )
 
 
 class PurgeInvocationLogsBody(BaseModel):
@@ -405,6 +421,14 @@ def patch_mcp_api_key_route(
             status_code=400,
             detail="Study scope cannot be cleared; at least one study is required.",
         )
+    owner_kw: dict = {}
+    if body.owner_user_id is not None:
+        ou = body.owner_user_id.strip()
+        if not ou:
+            raise HTTPException(status_code=400, detail="owner_user_id cannot be empty.")
+        if not store.get_user_by_id(ou):
+            raise HTTPException(status_code=400, detail="owner_user_id not found.")
+        owner_kw["owner_user_id"] = ou
     if body.allowed_study_ids is not None:
         norm_studies = normalize_allowed_study_ids(body.allowed_study_ids)
         if not norm_studies:
@@ -418,6 +442,7 @@ def patch_mcp_api_key_route(
             expires_at=exp,
             clear_expires_at=False,
             allowed_study_ids=norm_studies,
+            **owner_kw,
         )
     else:
         store.update_mcp_api_key(
@@ -425,6 +450,7 @@ def patch_mcp_api_key_route(
             name=str(body.name).strip() if body.name is not None else None,
             expires_at=exp,
             clear_expires_at=False,
+            **owner_kw,
         )
     updated = [k for k in store.list_mcp_api_keys() if k.id == key_id][0]
     return {

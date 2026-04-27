@@ -16,7 +16,8 @@ services:
     environment:
       NO_RELOAD: "1"
       DATASTORE: mariadb
-      DATABASE_URL: ${DATABASE_URL:-mysql://pipeline:pipeline@db:3306/pipeline_db}
+      # External DB only in prod: set DATABASE_URL in .env.production (no default to compose `db`).
+      DATABASE_URL: ${DATABASE_URL:?Set DATABASE_URL in .env.production (external MariaDB)}
       CUSTOM_COMPONENTS_DIR: /app/backend/custom_components
       # Secure session cookies; set FRONTEND_URL to https://lnpiapp.med.umn.edu (or your host)
       HTTPS: "1"
@@ -31,10 +32,3 @@ services:
       # Bind only on loopback if a host reverse proxy handles TLS (recommended):
       #   FRONTEND_PUBLISH=127.0.0.1:48722:80 docker compose ...
       - "${FRONTEND_PUBLISH:-0.0.0.0:48722:80}"
-
-  db:
-    environment:
-      MARIADB_ROOT_PASSWORD: ${MARIADB_ROOT_PASSWORD:-root}
-      MARIADB_DATABASE: ${MARIADB_DATABASE:-pipeline_db}
-      MARIADB_USER: ${MARIADB_USER:-pipeline}
-      MARIADB_PASSWORD: ${MARIADB_PASSWORD:-pipeline}

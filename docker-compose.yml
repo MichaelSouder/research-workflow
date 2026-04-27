@@ -1,5 +1,6 @@
 services:
   db:
+    profiles: ["local-db"]
     image: mariadb:11
     container_name: research-workflow-db
     restart: unless-stopped
@@ -22,9 +23,6 @@ services:
       dockerfile: backend/Dockerfile
     container_name: research-workflow-backend
     restart: unless-stopped
-    depends_on:
-      db:
-        condition: service_healthy
     env_file:
       - .env
     environment:

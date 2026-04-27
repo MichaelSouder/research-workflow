@@ -27,6 +27,8 @@ class User:
     created_at: datetime
     updated_at: datetime
     is_superuser: bool = False
+    # When True, HTTP tool API (/v1/tools/invoke) masks sensitive tool output for keys owned by this user.
+    tool_api_data_proxy_enabled: bool = True
     # Stored only in DB / mock; never expose in public JSON (use hasPassword in API).
     password_hash: Optional[str] = None
 
@@ -302,6 +304,10 @@ class Datastore(ABC):
         """Set platform superuser flag. Default: not implemented."""
         raise NotImplementedError
 
+    def set_user_tool_api_data_proxy(self, user_id: str, enabled: bool) -> None:
+        """Enable/disable data proxy for HTTP tool API keys owned by this user."""
+        raise NotImplementedError
+
     # --- MCP tool API keys & invocation audit (platform admin) ---
 
     @abstractmethod
@@ -325,8 +331,9 @@ class Datastore(ABC):
         clear_expires_at: bool = False,
         allowed_study_ids: Optional[list[str]] = None,
         clear_allowed_study_ids: bool = False,
+        owner_user_id: Optional[str] = None,
     ) -> None:
-        """Update metadata. Pass clear_expires_at=True to remove expiry."""
+        """Update metadata. Pass clear_expires_at=True to remove expiry. Set owner_user_id to reassign human owner."""
 
     @abstractmethod
     def rotate_mcp_api_key(self, key_id: str) -> tuple[McpApiKeyRecord, str]:

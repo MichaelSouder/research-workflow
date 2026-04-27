@@ -1,5 +1,5 @@
 import { Link, useLocation } from 'react-router-dom'
-import { BookOpen, FlaskConical, Moon, PanelLeft, PanelLeftClose, Shield, Sun } from 'lucide-react'
+import { BookOpen, FlaskConical, Moon, PanelLeft, PanelLeftClose, Plug, Shield, Sun } from 'lucide-react'
 import { APP_NAME } from '../branding'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
@@ -76,6 +76,14 @@ export default function AppSidebar() {
             Platform
           </NavItem>
         )}
+        <NavItem
+          to="/integrations"
+          icon={Plug}
+          active={path.startsWith('/integrations')}
+          collapsed={collapsed}
+        >
+          Integrations
+        </NavItem>
         <NavItem to="/help" icon={BookOpen} active={path.startsWith('/help')} collapsed={collapsed}>
           Help
         </NavItem>

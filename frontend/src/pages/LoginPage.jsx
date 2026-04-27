@@ -125,12 +125,14 @@ export default function LoginPage() {
                 <p className="text-muted-foreground text-center text-xs leading-snug">
                   Could not reach the API at{' '}
                   <code className="rounded bg-muted px-1 py-0.5 font-mono text-[0.65rem]">
-                    {authBase || '(same origin / Vite proxy)'}
+                    {authBase || '(same origin → Vite proxies to port 48721)'}
                   </code>
-                  . Start the backend from the project root (
-                  <code className="rounded bg-muted px-1 font-mono text-[0.65rem]">python run_backend.py</code>
-                  ), run the Vite dev server, or set <code className="font-mono text-[0.65rem]">VITE_BACKEND_URL</code>{' '}
-                  if you use a custom API URL.
+                  . Start the backend from the project root on{' '}
+                  <code className="rounded bg-muted px-1 font-mono text-[0.65rem]">BACKEND_PORT</code> (default{' '}
+                  <code className="font-mono text-[0.65rem]">48721</code>), e.g.{' '}
+                  <code className="rounded bg-muted px-1 font-mono text-[0.65rem]">uv run python run_backend.py</code>
+                  , keep <code className="font-mono text-[0.65rem]">npm run dev</code> running for the UI, then reload
+                  this page.
                 </p>
               ) : (
                 <p className="text-muted-foreground text-center text-xs leading-snug">

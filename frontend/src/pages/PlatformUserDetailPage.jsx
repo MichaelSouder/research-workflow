@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { toast } from 'sonner'
-import { getPlatformUser, putPlatformUserStudies, getStudies } from '../api'
+import { getPlatformUser, patchPlatformUser, putPlatformUserStudies, getStudies } from '../api'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import {
   Table,
@@ -46,6 +46,7 @@ export default function PlatformUserDetailPage() {
   const [addStudyId, setAddStudyId] = useState('')
   const [addRole, setAddRole] = useState('staff')
   const [saving, setSaving] = useState(false)
+  const [proxySaving, setProxySaving] = useState(false)
 
   const load = useCallback(async () => {
     if (!isSuperuser || !userId) return
@@ -197,6 +198,46 @@ export default function PlatformUserDetailPage() {
           )}
         </div>
       </div>
+      <Card className="overflow-hidden border-border shadow-sm">
+        <CardHeader className="border-b border-border bg-card">
+          <CardTitle className="text-lg">Tool API data proxy</CardTitle>
+          <CardDescription>
+            When enabled, ChatGPT and other HTTP tool clients see masked (mock) data for sensitive reads. Applies to
+            API keys owned by this user. Disabled only if you need a break-glass exception.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="pt-6">
+          <label className="flex cursor-pointer items-start gap-3 text-sm">
+            <input
+              type="checkbox"
+              className="mt-1 size-4 rounded border border-input"
+              checked={u?.toolApiDataProxy !== false}
+              disabled={proxySaving}
+              onChange={async (e) => {
+                const checked = e.target.checked
+                setProxySaving(true)
+                try {
+                  const res = await patchPlatformUser(userId, { tool_api_data_proxy: checked })
+                  setData((d) =>
+                    d && res.user ? { ...d, user: { ...d.user, ...res.user } } : d,
+                  )
+                  toast.success(checked ? 'Data proxy enabled.' : 'Data proxy disabled.')
+                } catch (err) {
+                  toast.error(err.message || 'Could not update setting.')
+                } finally {
+                  setProxySaving(false)
+                }
+              }}
+            />
+            <span>
+              <span className="font-medium text-foreground">Mask sensitive tool responses</span>
+              <span className="mt-1 block text-muted-foreground">
+                Recommended on. Changes apply on the next tool call; no client reinstall required.
+              </span>
+            </span>
+          </label>
+        </CardContent>
+      </Card>
       <Card className="overflow-hidden border-border shadow-sm">
         <CardHeader className="border-b border-border bg-card">
           <CardTitle className="text-lg">Study Access</CardTitle>

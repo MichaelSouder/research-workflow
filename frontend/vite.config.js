@@ -65,6 +65,7 @@ export default defineConfig(({ mode }) => {
   const apiAuthProxy = {
     '/api': { target: backendTarget, changeOrigin: true },
     '/auth': { target: backendTarget, changeOrigin: false },
+    '/v1': { target: backendTarget, changeOrigin: true },
   }
 
   return {

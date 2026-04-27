@@ -262,6 +262,17 @@ def _migrate_schema(conn: pymysql.Connection) -> None:
         row_ph = cur.fetchone()
         if row_ph and row_ph.get("c", 0) == 0:
             cur.execute("ALTER TABLE users ADD COLUMN password_hash VARCHAR(255) NULL")
+        cur.execute(
+            """
+            SELECT COUNT(*) AS c FROM information_schema.COLUMNS
+            WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'users' AND COLUMN_NAME = 'tool_api_data_proxy_enabled'
+            """
+        )
+        row_tdp = cur.fetchone()
+        if row_tdp and row_tdp.get("c", 0) == 0:
+            cur.execute(
+                "ALTER TABLE users ADD COLUMN tool_api_data_proxy_enabled TINYINT(1) NOT NULL DEFAULT 1"
+            )
     conn.commit()
 
 
@@ -280,6 +291,8 @@ def _row_to_user(row: dict) -> User:
     else:
         is_superuser = bool(su)
     ph = row.get("password_hash")
+    tdp = row.get("tool_api_data_proxy_enabled")
+    tool_api_proxy = True if tdp is None else bool(tdp)
     return User(
         id=row["id"],
         google_id=row["google_id"],
@@ -288,6 +301,7 @@ def _row_to_user(row: dict) -> User:
         created_at=_naive_to_utc(row["created_at"]),
         updated_at=_naive_to_utc(row["updated_at"]),
         is_superuser=is_superuser,
+        tool_api_data_proxy_enabled=tool_api_proxy,
         password_hash=ph if ph else None,
     )
 
@@ -390,7 +404,7 @@ class MariaDBDatastore(Datastore):
         try:
             with conn.cursor() as cur:
                 cur.execute(
-                    "SELECT id, google_id, email, name, created_at, updated_at, is_superuser, password_hash FROM users WHERE id = %s",
+                    "SELECT id, google_id, email, name, created_at, updated_at, is_superuser, password_hash, tool_api_data_proxy_enabled FROM users WHERE id = %s",
                     (user_id,),
                 )
                 row = cur.fetchone()
@@ -403,7 +417,7 @@ class MariaDBDatastore(Datastore):
         try:
             with conn.cursor() as cur:
                 cur.execute(
-                    "SELECT id, google_id, email, name, created_at, updated_at, is_superuser, password_hash FROM users WHERE google_id = %s",
+                    "SELECT id, google_id, email, name, created_at, updated_at, is_superuser, password_hash, tool_api_data_proxy_enabled FROM users WHERE google_id = %s",
                     (google_id,),
                 )
                 row = cur.fetchone()
@@ -431,6 +445,7 @@ class MariaDBDatastore(Datastore):
                         created_at=existing.created_at,
                         updated_at=now,
                         is_superuser=existing.is_superuser,
+                        tool_api_data_proxy_enabled=existing.tool_api_data_proxy_enabled,
                         password_hash=existing.password_hash,
                     )
                 user_id = str(uuid.uuid4())
@@ -447,6 +462,7 @@ class MariaDBDatastore(Datastore):
                     created_at=now,
                     updated_at=now,
                     is_superuser=False,
+                    tool_api_data_proxy_enabled=True,
                     password_hash=None,
                 )
         finally:
@@ -457,7 +473,7 @@ class MariaDBDatastore(Datastore):
         try:
             with conn.cursor() as cur:
                 cur.execute(
-                    "SELECT id, google_id, email, name, created_at, updated_at, is_superuser, password_hash FROM users"
+                    "SELECT id, google_id, email, name, created_at, updated_at, is_superuser, password_hash, tool_api_data_proxy_enabled FROM users"
                 )
                 rows = cur.fetchall()
             return [_row_to_user(r) for r in rows]
@@ -766,7 +782,7 @@ class MariaDBDatastore(Datastore):
         try:
             with conn.cursor() as cur:
                 cur.execute(
-                    """SELECT u.id, u.google_id, u.email, u.name, u.created_at, u.updated_at, u.is_superuser, u.password_hash, us.role
+                    """SELECT u.id, u.google_id, u.email, u.name, u.created_at, u.updated_at, u.is_superuser, u.password_hash, u.tool_api_data_proxy_enabled, us.role
                        FROM users u
                        INNER JOIN user_study us ON us.user_id = u.id
                        WHERE us.study_id = %s
@@ -806,7 +822,7 @@ class MariaDBDatastore(Datastore):
         try:
             with conn.cursor() as cur:
                 cur.execute(
-                    "SELECT id, google_id, email, name, created_at, updated_at, is_superuser, password_hash FROM users WHERE LOWER(TRIM(email)) = LOWER(TRIM(%s))",
+                    "SELECT id, google_id, email, name, created_at, updated_at, is_superuser, password_hash, tool_api_data_proxy_enabled FROM users WHERE LOWER(TRIM(email)) = LOWER(TRIM(%s))",
                     (email,),
                 )
                 row = cur.fetchone()
@@ -821,6 +837,18 @@ class MariaDBDatastore(Datastore):
                 cur.execute(
                     "UPDATE users SET is_superuser = %s, updated_at = %s WHERE id = %s",
                     (1 if is_superuser else 0, datetime.now(timezone.utc), user_id),
+                )
+                conn.commit()
+        finally:
+            conn.close()
+
+    def set_user_tool_api_data_proxy(self, user_id: str, enabled: bool) -> None:
+        conn = self._connection()
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "UPDATE users SET tool_api_data_proxy_enabled = %s, updated_at = %s WHERE id = %s",
+                    (1 if enabled else 0, datetime.now(timezone.utc), user_id),
                 )
                 conn.commit()
         finally:
@@ -852,6 +880,7 @@ class MariaDBDatastore(Datastore):
                 created_at=now,
                 updated_at=now,
                 is_superuser=False,
+                tool_api_data_proxy_enabled=True,
                 password_hash=password_hash,
             )
         finally:
@@ -1143,6 +1172,7 @@ class MariaDBDatastore(Datastore):
         clear_expires_at: bool = False,
         allowed_study_ids: Optional[list[str]] = None,
         clear_allowed_study_ids: bool = False,
+        owner_user_id: Optional[str] = None,
     ) -> None:
         conn = self._connection()
         try:
@@ -1173,6 +1203,12 @@ class MariaDBDatastore(Datastore):
                     cur.execute(
                         "UPDATE mcp_api_keys SET allowed_study_ids_json = %s WHERE id = %s",
                         (aj, key_id),
+                    )
+                if owner_user_id is not None:
+                    ou = str(owner_user_id).strip() or None
+                    cur.execute(
+                        "UPDATE mcp_api_keys SET owner_user_id = %s WHERE id = %s",
+                        (ou, key_id),
                     )
                 conn.commit()
         finally:

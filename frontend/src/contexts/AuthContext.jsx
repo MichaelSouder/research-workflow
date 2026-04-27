@@ -26,8 +26,11 @@ export function AuthProvider({ children }) {
       const u = await getAuthMe()
       setUser(u)
       return u
-    } catch {
-      setUser(null)
+    } catch (e) {
+      // Do not clear the session on network / proxy failures (e.g. backend stopped while UI stays open).
+      // Only explicit 401 is handled inside getAuthMe (returns null); other HTTP errors are rare for /auth/me.
+      if (isAbortError(e)) return null
+      console.warn('[auth] refresh skipped (backend unreachable or error):', e)
       return null
     }
   }, [])

@@ -26,7 +26,7 @@ from starlette.middleware.sessions import SessionMiddleware
 
 from backend.datastore import get_datastore
 from backend.migration import ensure_default_study
-from backend.routers import admin, auth, box, config_routes, distribution, grid, run, status, studies, tool_api
+from backend.routers import admin, auth, box, config_routes, distribution, grid, integrations, run, status, studies, tool_api
 from backend.services import scheduler as scheduler_service
 from backend.services import state
 
@@ -79,6 +79,7 @@ app.add_middleware(
 )
 
 app.include_router(auth.router)
+app.include_router(integrations.router)
 app.include_router(admin.router)
 app.include_router(studies.router)
 app.include_router(distribution.router)

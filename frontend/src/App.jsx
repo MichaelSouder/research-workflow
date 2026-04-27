@@ -11,6 +11,7 @@ import DistributionPage from './pages/DistributionPage'
 import PipelineGraphPage from './pages/PipelineGraphPage'
 import ProfilePage from './pages/ProfilePage'
 import HelpSupportPage from './pages/HelpSupportPage'
+import IntegrationsPage from './pages/IntegrationsPage'
 import PlatformDashboardPage from './pages/PlatformDashboardPage'
 import PlatformUsersPage from './pages/PlatformUsersPage'
 import PlatformUserDetailPage from './pages/PlatformUserDetailPage'
@@ -43,6 +44,7 @@ export default function App() {
             <Route path="api-logs" element={<PlatformApiLogsPage />} />
           </Route>
           <Route path="/profile" element={<ProfilePage />} />
+          <Route path="/integrations" element={<IntegrationsPage />} />
           <Route path="/help" element={<HelpSupportPage />} />
           <Route path="/" element={<Navigate to="/studies" replace />} />
           <Route path="*" element={<Navigate to="/studies" replace />} />

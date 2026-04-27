@@ -10,6 +10,8 @@ import {
   defaultOptions,
   getAuthBase,
   fetchApiJson,
+  readJsonOrEmpty,
+  apiErrorMessage,
 } from './lib/apiFetch.js'
 
 export { getAuthBase, fetchApiJson }
@@ -429,6 +431,94 @@ export async function createStudy({ name, description }) {
 }
 
 export * from './api/platformAdmin.js'
+
+export async function getIntegrationContext() {
+  const r = await fetch(`${API}/integrations/context`, defaultOptions)
+  if (!r.ok) {
+    const err = await readJsonOrEmpty(r)
+    throw new Error(apiErrorMessage(r, err))
+  }
+  return r.json()
+}
+
+export async function getMyMcpApiKeys() {
+  const r = await fetch(`${API}/integrations/mcp-api-keys`, defaultOptions)
+  if (!r.ok) {
+    const err = await readJsonOrEmpty(r)
+    throw new Error(apiErrorMessage(r, err))
+  }
+  const data = await r.json()
+  const rawList = Array.isArray(data) ? data : data.keys ?? []
+  const keys = rawList
+    .map((x) => ({
+      id: String(x?.id ?? '').trim(),
+      name: String(x?.name ?? 'API key').trim() || 'API key',
+      keyPrefix: String(x?.keyPrefix ?? x?.key_prefix ?? '—').trim() || '—',
+      scopes: x?.scopes,
+      allowedStudyIds: x?.allowedStudyIds ?? x?.allowed_study_ids,
+      createdAt: x?.createdAt ?? x?.created_at,
+      expiresAt: x?.expiresAt ?? x?.expires_at,
+    }))
+    .filter((x) => x.id)
+  const otherRaw = data.activeKeysNotOwnedByYou ?? data.active_keys_not_owned_by_you
+  const activeKeysNotOwnedByYou = Array.isArray(otherRaw)
+    ? otherRaw.map((x) => ({
+        id: String(x?.id ?? '').trim(),
+        name: String(x?.name ?? '').trim() || 'API key',
+        keyPrefix: String(x?.keyPrefix ?? x?.key_prefix ?? '').trim(),
+        ownerUserId: x?.ownerUserId ?? x?.owner_user_id ?? null,
+      }))
+    : []
+
+  const inactOtherRaw = data.inactiveKeysNotOwnedByYou ?? data.inactive_keys_not_owned_by_you
+  const inactiveKeysNotOwnedByYou = Array.isArray(inactOtherRaw)
+    ? inactOtherRaw.map((x) => ({
+        id: String(x?.id ?? '').trim(),
+        name: String(x?.name ?? '').trim() || 'API key',
+        keyPrefix: String(x?.keyPrefix ?? x?.key_prefix ?? '').trim(),
+        ownerUserId: x?.ownerUserId ?? x?.owner_user_id ?? null,
+        reason: String(x?.reason ?? 'inactive'),
+      }))
+    : []
+
+  const ownedRaw = data.ownedButInactive ?? data.owned_but_inactive
+  const ownedButInactive = Array.isArray(ownedRaw)
+    ? ownedRaw.map((x) => ({
+        id: String(x?.id ?? '').trim(),
+        name: String(x?.name ?? '').trim() || 'API key',
+        keyPrefix: String(x?.keyPrefix ?? x?.key_prefix ?? '').trim(),
+        reason: String(x?.reason ?? 'inactive'),
+        expiresAt: x?.expiresAt ?? x?.expires_at ?? null,
+        revokedAt: x?.revokedAt ?? x?.revoked_at ?? null,
+      }))
+    : []
+
+  return {
+    keys,
+    viewerUserId: data.viewerUserId ?? data.viewer_user_id ?? null,
+    activeKeysNotOwnedByYou,
+    inactiveKeysNotOwnedByYou,
+    ownedButInactive,
+  }
+}
+
+/**
+ * @param {{ apiKeyId: string, apiKeySecret: string }} params
+ * @returns {Promise<Blob>}
+ */
+export async function downloadClaudeIntegrationBundle({ apiKeyId, apiKeySecret }) {
+  const r = await fetch(`${API}/integrations/bundles/claude`, {
+    ...defaultOptions,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ api_key_id: apiKeyId, api_key_secret: apiKeySecret }),
+  })
+  if (!r.ok) {
+    const err = await readJsonOrEmpty(r)
+    throw new Error(apiErrorMessage(r, err))
+  }
+  return r.blob()
+}
 
 export async function addStudyUserByEmail(studyId, { email, role }) {
   const r = await fetch(`${API}/studies/${encodeURIComponent(studyId)}/users/add`, {

@@ -22,6 +22,10 @@ from backend.datastore.base import (
 from backend.mcp_key_hash import hash_mcp_api_secret, normalize_allowed_study_ids
 from backend.passwords import PENDING_GOOGLE_PREFIX
 
+# Stable id for dev bypass (`/auth/dev-login`) so Owner on MCP keys matches session across fresh mock stores.
+_MOCK_DEV_BYPASS_GOOGLE_ID = "dev-bypass-local"
+_MOCK_DEV_BYPASS_USER_ID = "00000000-0000-4000-8000-000000000001"
+
 
 class MockDatastore(Datastore):
     """In-memory implementation: sessions, users, studies, study config, user_study."""
@@ -101,12 +105,17 @@ class MockDatastore(Datastore):
                 created_at=existing.created_at,
                 updated_at=now,
                 is_superuser=existing.is_superuser,
+                tool_api_data_proxy_enabled=existing.tool_api_data_proxy_enabled,
                 password_hash=existing.password_hash,
             )
             self._users[existing.id] = updated
             self._users_by_google[google_id] = existing.id
             return updated
-        user_id = str(uuid.uuid4())
+        user_id = (
+            _MOCK_DEV_BYPASS_USER_ID
+            if google_id == _MOCK_DEV_BYPASS_GOOGLE_ID and _MOCK_DEV_BYPASS_USER_ID not in self._users
+            else str(uuid.uuid4())
+        )
         user = User(
             id=user_id,
             google_id=google_id,
@@ -115,6 +124,7 @@ class MockDatastore(Datastore):
             created_at=now,
             updated_at=now,
             is_superuser=False,
+            tool_api_data_proxy_enabled=True,
             password_hash=None,
         )
         self._users[user_id] = user
@@ -136,6 +146,23 @@ class MockDatastore(Datastore):
             created_at=u.created_at,
             updated_at=u.updated_at,
             is_superuser=is_superuser,
+            tool_api_data_proxy_enabled=u.tool_api_data_proxy_enabled,
+            password_hash=u.password_hash,
+        )
+
+    def set_user_tool_api_data_proxy(self, user_id: str, enabled: bool) -> None:
+        u = self._users.get(user_id)
+        if not u:
+            return
+        self._users[user_id] = User(
+            id=u.id,
+            google_id=u.google_id,
+            email=u.email,
+            name=u.name,
+            created_at=u.created_at,
+            updated_at=datetime.now(timezone.utc),
+            is_superuser=u.is_superuser,
+            tool_api_data_proxy_enabled=enabled,
             password_hash=u.password_hash,
         )
 
@@ -157,6 +184,7 @@ class MockDatastore(Datastore):
             created_at=now,
             updated_at=now,
             is_superuser=False,
+            tool_api_data_proxy_enabled=True,
             password_hash=password_hash,
         )
         self._users[user_id] = user
@@ -183,6 +211,7 @@ class MockDatastore(Datastore):
             created_at=u.created_at,
             updated_at=datetime.now(timezone.utc),
             is_superuser=u.is_superuser,
+            tool_api_data_proxy_enabled=u.tool_api_data_proxy_enabled,
             password_hash=u.password_hash,
         )
 
@@ -198,6 +227,7 @@ class MockDatastore(Datastore):
             created_at=u.created_at,
             updated_at=datetime.now(timezone.utc),
             is_superuser=u.is_superuser,
+            tool_api_data_proxy_enabled=u.tool_api_data_proxy_enabled,
             password_hash=password_hash,
         )
 
@@ -217,6 +247,7 @@ class MockDatastore(Datastore):
             created_at=u.created_at,
             updated_at=now,
             is_superuser=u.is_superuser,
+            tool_api_data_proxy_enabled=u.tool_api_data_proxy_enabled,
             password_hash=u.password_hash,
         )
         self._users[user_id] = updated
@@ -615,6 +646,7 @@ class MockDatastore(Datastore):
         clear_expires_at: bool = False,
         allowed_study_ids: Optional[list[str]] = None,
         clear_allowed_study_ids: bool = False,
+        owner_user_id: Optional[str] = None,
     ) -> None:
         rec = self._mcp_api_keys.get(key_id)
         if not rec:
@@ -632,6 +664,8 @@ class MockDatastore(Datastore):
             rec["allowed_study_ids"] = []
         elif allowed_study_ids is not None:
             rec["allowed_study_ids"] = normalize_allowed_study_ids(allowed_study_ids)
+        if owner_user_id is not None:
+            rec["owner_user_id"] = str(owner_user_id).strip() or None
 
     def rotate_mcp_api_key(self, key_id: str) -> tuple[McpApiKeyRecord, str]:
         rec = self._mcp_api_keys.get(key_id)

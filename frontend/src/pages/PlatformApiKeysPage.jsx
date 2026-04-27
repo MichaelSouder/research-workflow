@@ -46,7 +46,7 @@ function localDateTimeToIso(local) {
 }
 
 export default function PlatformApiKeysPage() {
-  const { isSuperuser } = useAuth()
+  const { isSuperuser, user: authUser } = useAuth()
   const [keys, setKeys] = useState([])
   const [tools, setTools] = useState([])
   const [platformUsers, setPlatformUsers] = useState([])
@@ -69,6 +69,7 @@ export default function PlatformApiKeysPage() {
   const [editKey, setEditKey] = useState(null)
   const [editName, setEditName] = useState('')
   const [editExpires, setEditExpires] = useState('')
+  const [editOwnerUserId, setEditOwnerUserId] = useState('')
   const [editStudyAllow, setEditStudyAllow] = useState(() => new Set())
   const [savingEdit, setSavingEdit] = useState(false)
 
@@ -137,6 +138,12 @@ export default function PlatformApiKeysPage() {
       cancelled = true
     }
   }, [isSuperuser, load])
+
+  useEffect(() => {
+    if (!authUser?.id || ownerUserId) return
+    if (!platformUsers.some((u) => u.id === authUser.id)) return
+    setOwnerUserId(authUser.id)
+  }, [authUser?.id, ownerUserId, platformUsers])
 
   const toggleScope = (t) => {
     setScopes((prev) => {
@@ -237,6 +244,7 @@ export default function PlatformApiKeysPage() {
 
   const openEdit = (k) => {
     setEditKey(k)
+    setEditOwnerUserId((k.ownerUserId || authUser?.id || '').trim())
     setEditName(k.name || '')
     if (k.expiresAt) {
       try {
@@ -257,6 +265,10 @@ export default function PlatformApiKeysPage() {
 
   const saveEdit = async () => {
     if (!editKey) return
+    if (!editOwnerUserId?.trim()) {
+      toast.error('Select an owner for this key.')
+      return
+    }
     if (editStudyAllow.size === 0) {
       toast.error('Select at least one study.')
       return
@@ -269,7 +281,7 @@ export default function PlatformApiKeysPage() {
     setSavingEdit(true)
     try {
       const nm = editName.trim() || 'API key'
-      const patch = { name: nm, expiresAt: iso }
+      const patch = { name: nm, expiresAt: iso, ownerUserId: editOwnerUserId.trim() }
       const prevAllow = [...(editKey.allowedStudyIds || [])].sort()
       const nextAllow = [...editStudyAllow].sort()
       const allowChanged =
@@ -375,6 +387,7 @@ export default function PlatformApiKeysPage() {
           <CardTitle className="text-lg">Create Key</CardTitle>
           <CardDescription>
             Optional scopes restrict which tool names can be invoked. Owner, expiry, and at least one study are required.
+            Owner defaults to you so the key appears on Integrations for the Claude MCP zip.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -401,7 +414,7 @@ export default function PlatformApiKeysPage() {
                 <option value="">— Select user —</option>
                 {platformUsers.map((u) => (
                   <option key={u.id} value={u.id}>
-                    {u.name} ({u.email})
+                    {u.name} ({u.email}) · {u.id.slice(0, 8)}…
                   </option>
                 ))}
               </select>
@@ -519,7 +532,10 @@ export default function PlatformApiKeysPage() {
                     <TableCell className="font-mono text-xs text-muted-foreground">{k.keyPrefix}</TableCell>
                     <TableCell className="text-xs text-muted-foreground">
                       {k.ownerUserId ? (
-                        userById.get(k.ownerUserId)?.email || k.ownerUserId
+                        <span>
+                          {userById.get(k.ownerUserId)?.email || '—'} ·{' '}
+                          <span className="font-mono text-[11px] text-foreground">{k.ownerUserId.slice(0, 8)}…</span>
+                        </span>
                       ) : (
                         <span className="text-amber-700 dark:text-amber-300">Legacy — replace key</span>
                       )}
@@ -647,13 +663,30 @@ export default function PlatformApiKeysPage() {
           <AlertDialogHeader>
             <AlertDialogTitle>Edit API Key</AlertDialogTitle>
             <AlertDialogDescription>
-              Update the label, expiry, or study allowlist. Expiry is required. At least one study must remain selected.
+              Update the label, owner, expiry, or study allowlist. Only the key owner sees it on Integrations for the
+              Claude bundle download.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <div className="grid max-h-[min(70vh,520px)] gap-3 overflow-y-auto py-2">
             <div className="grid gap-2">
               <Label htmlFor="edit-name">Name</Label>
               <Input id="edit-name" value={editName} onChange={(e) => setEditName(e.target.value)} />
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="edit-owner">Owner</Label>
+              <select
+                id="edit-owner"
+                className="border-input flex h-9 w-full rounded-md border bg-transparent px-3 py-1 text-sm shadow-xs outline-none"
+                value={editOwnerUserId}
+                onChange={(e) => setEditOwnerUserId(e.target.value)}
+              >
+                <option value="">— Select user —</option>
+                {platformUsers.map((u) => (
+                  <option key={u.id} value={u.id}>
+                    {u.name} ({u.email}) · {u.id.slice(0, 8)}…
+                  </option>
+                ))}
+              </select>
             </div>
             <div className="grid gap-2">
               <Label htmlFor="edit-exp">Expires (required, local time)</Label>

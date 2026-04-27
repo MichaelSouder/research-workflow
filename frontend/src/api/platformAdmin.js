@@ -130,6 +130,7 @@ export async function patchMcpApiKey(keyId, patch) {
   const body = {}
   if (patch.name !== undefined) body.name = patch.name
   if (patch.expiresAt !== undefined) body.expires_at = patch.expiresAt
+  if (patch.ownerUserId !== undefined) body.owner_user_id = patch.ownerUserId
   if (patch.clearAllowedStudyIds) body.clear_allowed_study_ids = true
   else if (patch.allowedStudyIds !== undefined) body.allowed_study_ids = patch.allowedStudyIds
   const r = await fetch(`${API}/admin/mcp-api-keys/${encodeURIComponent(keyId)}`, {
