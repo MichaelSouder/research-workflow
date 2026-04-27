@@ -1,0 +1,183 @@
+{
+  "description": "Function declarations for Gemini (Google AI Studio / Vertex). Call POST /v1/tools/invoke with tool and arguments. Auth: Bearer token or X-API-Key.",
+  "tools": [
+    {
+      "name": "qual_studies_list",
+      "description": "List all studies the current user has access to, with role (viewer, editor, admin).",
+      "parameters": {}
+    },
+    {
+      "name": "qual_study_get",
+      "description": "Get a single study by id. Returns id, name, description, role.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "study_id": { "type": "string", "description": "Study id" }
+        },
+        "required": ["study_id"]
+      }
+    },
+    {
+      "name": "qual_pipelines_list",
+      "description": "List pipelines for a study. Returns id, name, isDefault for each.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "study_id": { "type": "string" }
+        },
+        "required": ["study_id"]
+      }
+    },
+    {
+      "name": "qual_pipeline_get",
+      "description": "Get full pipeline definition (nodes, edges) for a study.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "study_id": { "type": "string" },
+          "pipeline_id": { "type": "string", "default": "__default__" }
+        },
+        "required": ["study_id"]
+      }
+    },
+    {
+      "name": "qual_study_config_get",
+      "description": "Get study config (keys and values). Secrets masked unless reveal_secrets and MCP_REVEAL_SECRETS=1.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "study_id": { "type": "string" },
+          "reveal_secrets": { "type": "boolean", "default": false }
+        },
+        "required": ["study_id"]
+      }
+    },
+    {
+      "name": "qual_status",
+      "description": "Get run status. Optionally filter by study_id.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "study_id": { "type": "string" }
+        }
+      }
+    },
+    {
+      "name": "qual_distribution_contacts",
+      "description": "List mailing list contacts for the study.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "study_id": { "type": "string" }
+        },
+        "required": ["study_id"]
+      }
+    },
+    {
+      "name": "qual_distribution_send_preview",
+      "description": "Preview which contacts would receive a send (no actual send).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "study_id": { "type": "string" }
+        },
+        "required": ["study_id"]
+      }
+    },
+    {
+      "name": "qual_distribution_send",
+      "description": "Start sending distributions (dangerous). Requires confirm_dangerous_operation: true.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "study_id": { "type": "string" },
+          "limit": { "type": "integer" },
+          "contact_indices": { "type": "array", "items": { "type": "integer" } },
+          "bypass_time_slot": { "type": "boolean" },
+          "confirm_dangerous_operation": { "type": "boolean" }
+        },
+        "required": ["study_id", "confirm_dangerous_operation"]
+      }
+    },
+    {
+      "name": "qual_components_list",
+      "description": "List all registered pipeline components (built-in and custom). Returns id, label, category, inputs, outputs, config_keys, source for each.",
+      "parameters": {}
+    },
+    {
+      "name": "qual_component_get",
+      "description": "Get full manifest for a component by id (e.g. qualtrics, process, grid, box, or custom component id).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "component_id": { "type": "string", "description": "Component id" }
+        },
+        "required": ["component_id"]
+      }
+    },
+    {
+      "name": "qual_component_run_debug",
+      "description": "Run custom component code in the sandbox with sample inputs (no pipeline run). Code uses pipeline.input(port_id), pipeline.config(key), pipeline.output(port_id, value), pipeline.log(msg). Use to test custom node code.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "code": { "type": "string" },
+          "inputs_json": { "type": "string", "default": "{}" },
+          "config_json": { "type": "string", "default": "{}" },
+          "timeout_seconds": { "type": "integer", "default": 30 }
+        },
+        "required": ["code"]
+      }
+    },
+    {
+      "name": "qual_component_create",
+      "description": "Create a new custom pipeline component. component_id: unique id (letters, numbers, underscore). Requires confirm_dangerous_operation: true.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "component_id": { "type": "string" },
+          "label": { "type": "string" },
+          "code": { "type": "string" },
+          "description": { "type": "string", "default": "" },
+          "category": { "type": "string", "default": "custom" },
+          "inputs": { "type": "array", "items": { "type": "object" } },
+          "outputs": { "type": "array", "items": { "type": "object" } },
+          "config_keys": { "type": "array", "items": { "type": "string" } },
+          "confirm_dangerous_operation": { "type": "boolean", "default": false }
+        },
+        "required": ["component_id", "label", "code", "confirm_dangerous_operation"]
+      }
+    },
+    {
+      "name": "qual_component_update",
+      "description": "Update an existing custom component. Only provided fields are updated. Requires confirm_dangerous_operation: true.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "component_id": { "type": "string" },
+          "label": { "type": "string" },
+          "description": { "type": "string" },
+          "category": { "type": "string" },
+          "inputs": { "type": "array", "items": { "type": "object" } },
+          "outputs": { "type": "array", "items": { "type": "object" } },
+          "config_keys": { "type": "array", "items": { "type": "string" } },
+          "code": { "type": "string" },
+          "confirm_dangerous_operation": { "type": "boolean", "default": false }
+        },
+        "required": ["component_id", "confirm_dangerous_operation"]
+      }
+    },
+    {
+      "name": "qual_component_delete",
+      "description": "Delete a custom pipeline component. Cannot delete built-ins. Requires confirm_dangerous_operation: true.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "component_id": { "type": "string" },
+          "confirm_dangerous_operation": { "type": "boolean", "default": false }
+        },
+        "required": ["component_id", "confirm_dangerous_operation"]
+      }
+    }
+  ]
+}

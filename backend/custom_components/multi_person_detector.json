@@ -1,0 +1,47 @@
+{
+  "manifest": {
+    "id": "multi_person_detector",
+    "label": "Multi-Person Video Detector",
+    "description": "Downloads videos from Box, samples frames using OpenCV, and flags records where more than one person is detected in any frame using the HOG person detector.",
+    "category": "processing",
+    "inputs": [
+      {
+        "id": "records",
+        "label": "Survey records with video info",
+        "type": "records",
+        "required": true
+      },
+      {
+        "id": "videos_info",
+        "label": "Video info records from Qualtrics",
+        "type": "records",
+        "required": false
+      }
+    ],
+    "outputs": [
+      {
+        "id": "records",
+        "label": "Records flagged with multi-person detection results",
+        "type": "records"
+      },
+      {
+        "id": "flagged_records",
+        "label": "Only records where multiple people were detected",
+        "type": "records"
+      }
+    ],
+    "config_keys": [
+      "BOX_CONFIG_PATH",
+      "BOX_ROOT_FOLDER_ID",
+      "FRAME_SAMPLE_INTERVAL_SEC",
+      "HOG_WIN_STRIDE",
+      "HOG_PADDING",
+      "HOG_SCALE",
+      "VIDEO_FIELD",
+      "RESPONSE_ID_FIELD"
+    ],
+    "version": null,
+    "handles_sensitive_data": true
+  },
+  "code": "\nimport os\nimport json\nimport tempfile\nimport collections\nimport cv2\nimport numpy as np\nimport boxsdk\n\n# ---------------------------------------------------------------------------\n# Config\n# ---------------------------------------------------------------------------\nBOX_CONFIG_PATH          = os.environ.get(\"BOX_CONFIG_PATH\", \"/run/secrets/box_config.json\")\nBOX_ROOT_FOLDER_ID       = os.environ.get(\"BOX_ROOT_FOLDER_ID\", \"0\")\nFRAME_SAMPLE_INTERVAL    = float(os.environ.get(\"FRAME_SAMPLE_INTERVAL_SEC\", \"1.0\"))\nHOG_WIN_STRIDE           = tuple(int(x) for x in os.environ.get(\"HOG_WIN_STRIDE\", \"8,8\").split(\",\"))\nHOG_PADDING              = tuple(int(x) for x in os.environ.get(\"HOG_PADDING\", \"4,4\").split(\",\"))\nHOG_SCALE                = float(os.environ.get(\"HOG_SCALE\", \"1.05\"))\nVIDEO_FIELD              = os.environ.get(\"VIDEO_FIELD\", \"video_box_path\")\nRESPONSE_ID_FIELD        = os.environ.get(\"RESPONSE_ID_FIELD\", \"ResponseId\")\n\n\n# ---------------------------------------------------------------------------\n# Helpers\n# ---------------------------------------------------------------------------\n\ndef get_box_client():\n    with open(BOX_CONFIG_PATH) as f:\n        cfg = boxsdk.JWTAuth.from_settings_dictionary(json.load(f))\n    return boxsdk.Client(cfg)\n\n\ndef download_video_from_box(client, box_file_id: str, dest_path: str):\n    \"\"\"Stream a Box file to a local temp path.\"\"\"\n    with open(dest_path, \"wb\") as f:\n        client.file(box_file_id).download_to(f)\n\n\ndef parse_box_path(box_path: str):\n    \"\"\"\n    Accept two formats:\n      box://<folder_id>/<file_id>/<filename>   (our own convention)\n      <file_id>                                (bare file id)\n    Returns file_id string.\n    \"\"\"\n    if box_path.startswith(\"box://\"):\n        parts = box_path.replace(\"box://\", \"\").split(\"/\")\n        # parts = [folder_id, file_id, filename]\n        return parts[1] if len(parts) >= 2 else parts[0]\n    return box_path.strip()\n\n\ndef detect_multi_person_in_video(video_path: str):\n    \"\"\"\n    Sample frames every FRAME_SAMPLE_INTERVAL seconds.\n    Use OpenCV HOG detector to count people per frame.\n    Returns (flagged: bool, max_people: int, flagged_frame_count: int).\n    \"\"\"\n    hog = cv2.HOGDescriptor()\n    hog.setSVMDetector(cv2.HOGDescriptor_getDefaultPeopleDetector())\n\n    cap = cv2.VideoCapture(video_path)\n    if not cap.isOpened():\n        return False, 0, 0\n\n    fps = cap.get(cv2.CAP_PROP_FPS) or 25.0\n    frame_interval = max(1, int(fps * FRAME_SAMPLE_INTERVAL))\n\n    max_people       = 0\n    flagged_frames   = 0\n    frame_index      = 0\n\n    while True:\n        ret, frame = cap.read()\n        if not ret:\n            break\n\n        if frame_index % frame_interval == 0:\n            # Resize for speed while keeping aspect ratio\n            h, w = frame.shape[:2]\n            scale = min(1.0, 640.0 / w)\n            if scale < 1.0:\n                frame = cv2.resize(frame, (int(w * scale), int(h * scale)))\n\n            rects, _ = hog.detectMultiScale(\n                frame,\n                winStride=HOG_WIN_STRIDE,\n                padding=HOG_PADDING,\n                scale=HOG_SCALE,\n            )\n            count = len(rects)\n            if count > max_people:\n                max_people = count\n            if count > 1:\n                flagged_frames += 1\n\n        frame_index += 1\n\n    cap.release()\n    flagged = flagged_frames > 0\n    return flagged, max_people, flagged_frames\n\n\n# ---------------------------------------------------------------------------\n# Main entry point\n# ---------------------------------------------------------------------------\n\ndef run(inputs):\n    records     = inputs.get(\"records\", [])\n    videos_info = inputs.get(\"videos_info\", [])\n\n    # Build a lookup: ResponseId -> list of box paths\n    # videos_info records are expected to have RESPONSE_ID_FIELD and VIDEO_FIELD\n    video_lookup = collections.defaultdict(list)\n    for v in videos_info:\n        rid  = str(v.get(RESPONSE_ID_FIELD, \"\")).strip()\n        path = str(v.get(VIDEO_FIELD, \"\")).strip()\n        if rid and path:\n            video_lookup[rid].append(path)\n\n    # Also check for VIDEO_FIELD directly on survey records as a fallback\n    client = get_box_client()\n\n    output_records  = []\n    flagged_records = []\n\n    for record in records:\n        rid = str(record.get(RESPONSE_ID_FIELD, \"\")).strip()\n\n        # Gather video paths for this respondent\n        box_paths = list(video_lookup.get(rid, []))\n        # Fallback: VIDEO_FIELD embedded directly on the record\n        inline = str(record.get(VIDEO_FIELD, \"\")).strip()\n        if inline and inline not in box_paths:\n            box_paths.append(inline)\n\n        if not box_paths:\n            # No video for this record \u2014 pass through untouched\n            record[\"multi_person_detected\"]    = False\n            record[\"multi_person_max_count\"]   = 0\n            record[\"multi_person_frame_count\"] = 0\n            record[\"multi_person_videos_checked\"] = 0\n            output_records.append(record)\n            continue\n\n        overall_flagged      = False\n        overall_max_people   = 0\n        overall_flag_frames  = 0\n        videos_checked       = 0\n\n        for box_path in box_paths:\n            file_id = parse_box_path(box_path)\n            if not file_id:\n                continue\n\n            with tempfile.NamedTemporaryFile(suffix=\".mp4\", delete=False) as tmp:\n                tmp_path = tmp.name\n\n            try:\n                download_video_from_box(client, file_id, tmp_path)\n                flagged, max_ppl, flag_frames = detect_multi_person_in_video(tmp_path)\n                videos_checked += 1\n\n                if flagged:\n                    overall_flagged = True\n                if max_ppl > overall_max_people:\n                    overall_max_people = max_ppl\n                overall_flag_frames += flag_frames\n\n            except Exception as e:\n                record.setdefault(\"multi_person_errors\", []).append(\n                    f\"{box_path}: {str(e)}\"\n                )\n            finally:\n                if os.path.exists(tmp_path):\n                    os.remove(tmp_path)\n\n        record[\"multi_person_detected\"]       = overall_flagged\n        record[\"multi_person_max_count\"]      = overall_max_people\n        record[\"multi_person_frame_count\"]    = overall_flag_frames\n        record[\"multi_person_videos_checked\"] = videos_checked\n\n        output_records.append(record)\n        if overall_flagged:\n            flagged_records.append(record)\n\n    return {\n        \"records\":         output_records,\n        \"flagged_records\": flagged_records,\n    }\n"
+}

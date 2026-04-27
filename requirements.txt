@@ -1,0 +1,3 @@
+boxsdk>=3,<4
+Faker>=22
+requests>=2.28

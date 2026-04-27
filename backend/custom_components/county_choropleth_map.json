@@ -1,0 +1,38 @@
+{
+  "manifest": {
+    "id": "county_choropleth_map",
+    "label": "County Choropleth Map",
+    "description": "Aggregates survey responses by US county and generates a self-contained D3 choropleth HTML map, then uploads it to Box.",
+    "category": "processing",
+    "inputs": [
+      {
+        "id": "records",
+        "label": "Survey records",
+        "type": "records",
+        "required": true
+      }
+    ],
+    "outputs": [
+      {
+        "id": "records",
+        "label": "Records (pass-through)",
+        "type": "records"
+      },
+      {
+        "id": "map_path",
+        "label": "Box path of uploaded HTML map",
+        "type": "file_path"
+      }
+    ],
+    "config_keys": [
+      "COUNTY_FIELD",
+      "STATE_FIELD",
+      "BOX_ROOT_FOLDER_ID",
+      "BOX_CONFIG_PATH",
+      "MAP_TITLE"
+    ],
+    "version": null,
+    "handles_sensitive_data": false
+  },
+  "code": "\nimport json\nimport os\nimport io\nimport collections\nimport datetime\nimport boxsdk\n\n# ---------------------------------------------------------------------------\n# Config\n# ---------------------------------------------------------------------------\nCOUNTY_FIELD = os.environ.get(\"COUNTY_FIELD\", \"county\")\nSTATE_FIELD  = os.environ.get(\"STATE_FIELD\",  \"state\")\nBOX_FOLDER_ID   = os.environ.get(\"BOX_ROOT_FOLDER_ID\", \"334546874262\")\nBOX_CONFIG_PATH = os.environ.get(\"BOX_CONFIG_PATH\", \"/run/secrets/box_config.json\")\nMAP_TITLE    = os.environ.get(\"MAP_TITLE\", \"Survey Responses by County\")\n\n\ndef run(inputs):\n    records = inputs.get(\"records\", [])\n\n    # ------------------------------------------------------------------\n    # 1. Aggregate counts keyed by \"State|County\" (case-normalised)\n    # ------------------------------------------------------------------\n    counts = collections.Counter()\n    for rec in records:\n        county = str(rec.get(COUNTY_FIELD, \"\")).strip().title()\n        state  = str(rec.get(STATE_FIELD,  \"\")).strip().upper()\n        if county and state:\n            counts[f\"{state}|{county}\"] += 1\n\n    counts_list = [\n        {\"key\": k, \"state\": k.split(\"|\")[0], \"county\": k.split(\"|\")[1], \"value\": v}\n        for k, v in counts.items()\n    ]\n\n    # ------------------------------------------------------------------\n    # 2. Build self-contained D3 v7 choropleth HTML\n    # ------------------------------------------------------------------\n    counts_json = json.dumps(counts_list)\n    html = f\"\"\"<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n<meta charset=\"utf-8\"/>\n<title>{MAP_TITLE}</title>\n<style>\n  body {{ margin:0; font-family: sans-serif; background:#f4f4f4; }}\n  h1   {{ text-align:center; padding:16px 0 4px; font-size:1.3rem; color:#333; }}\n  #map {{ display:block; margin:0 auto; }}\n  .tooltip {{\n    position:absolute; pointer-events:none;\n    background:rgba(0,0,0,.75); color:#fff;\n    padding:6px 10px; border-radius:4px; font-size:.85rem;\n    opacity:0; transition:opacity .15s;\n  }}\n  .legend-label {{ font-size:.75rem; fill:#555; }}\n</style>\n</head>\n<body>\n<h1>{MAP_TITLE}</h1>\n<div class=\"tooltip\" id=\"tip\"></div>\n<svg id=\"map\" width=\"960\" height=\"600\"></svg>\n\n<script src=\"https://cdn.jsdelivr.net/npm/d3@7/dist/d3.min.js\"></script>\n<script src=\"https://cdn.jsdelivr.net/npm/topojson-client@3/dist/topojson-client.min.js\"></script>\n<script>\n(async () => {{\n  const counts = {counts_json};\n  const lookup = {{}};\n  counts.forEach(d => {{ lookup[d.key] = d.value; }});\n\n  // Fetch US Atlas counties topology (CDN)\n  const us = await d3.json(\n    \"https://cdn.jsdelivr.net/npm/us-atlas@3/counties-albers-10m.json\"\n  );\n\n  // FIPS -> name mapping from topology\n  const countyNames = {{}};\n  topojson.feature(us, us.objects.counties).features.forEach(f => {{\n    countyNames[f.id] = f.properties.name;\n  }});\n  const stateNames = {{}};\n  topojson.feature(us, us.objects.states).features.forEach(f => {{\n    stateNames[f.id] = f.properties.name;\n  }});\n\n  // Build FIPS lookup from state+county name\n  const fipsLookup = {{}};\n  topojson.feature(us, us.objects.counties).features.forEach(f => {{\n    const stFips = f.id.slice(0,2);\n    const stAbbr = stateNames[stFips] ? stateNames[stFips].toUpperCase().slice(0,2) : \"\";\n    const key = stAbbr + \"|\" + f.properties.name;\n    fipsLookup[key] = f.id;\n  }});\n\n  const getValue = (feature) => {{\n    const stFips = feature.id.slice(0,2);\n    const stName = (stateNames[stFips] || \"\").toUpperCase().slice(0,2);\n    const key = stName + \"|\" + feature.properties.name;\n    return lookup[key] || 0;\n  }};\n\n  const maxVal = d3.max(counts, d => d.value) || 1;\n  const color  = d3.scaleSequential(d3.interpolateBlues).domain([0, maxVal]);\n\n  const svg  = d3.select(\"#map\");\n  const path = d3.geoPath();\n  const tip  = d3.select(\"#tip\");\n\n  // Counties\n  svg.append(\"g\")\n    .selectAll(\"path\")\n    .data(topojson.feature(us, us.objects.counties).features)\n    .join(\"path\")\n      .attr(\"fill\", d => {{ const v = getValue(d); return v ? color(v) : \"#e8e8e8\"; }})\n      .attr(\"d\", path)\n      .on(\"mousemove\", (event, d) => {{\n        const v = getValue(d);\n        const stFips = d.id.slice(0,2);\n        tip.style(\"opacity\",1)\n           .style(\"left\", (event.pageX+12)+\"px\")\n           .style(\"top\",  (event.pageY-28)+\"px\")\n           .html(`<b>${{d.properties.name}}, ${{stateNames[stFips]||\"\"}}</b><br/>Responses: ${{v}}`);\n      }})\n      .on(\"mouseleave\", () => tip.style(\"opacity\",0));\n\n  // State borders\n  svg.append(\"path\")\n    .datum(topojson.mesh(us, us.objects.states, (a,b) => a !== b))\n    .attr(\"fill\",\"none\").attr(\"stroke\",\"#fff\").attr(\"stroke-width\",1)\n    .attr(\"d\", path);\n\n  // Legend\n  const lw=200, lh=12, lx=700, ly=550;\n  const defs = svg.append(\"defs\");\n  const grad = defs.append(\"linearGradient\").attr(\"id\",\"leg-grad\");\n  grad.selectAll(\"stop\")\n    .data(d3.ticks(0,1,10))\n    .join(\"stop\")\n      .attr(\"offset\", d => d)\n      .attr(\"stop-color\", d => color(d*maxVal));\n\n  svg.append(\"rect\")\n    .attr(\"x\",lx).attr(\"y\",ly).attr(\"width\",lw).attr(\"height\",lh)\n    .attr(\"fill\",\"url(#leg-grad)\");\n  svg.append(\"text\").attr(\"class\",\"legend-label\")\n    .attr(\"x\",lx).attr(\"y\",ly+lh+12).text(\"0\");\n  svg.append(\"text\").attr(\"class\",\"legend-label\")\n    .attr(\"x\",lx+lw).attr(\"y\",ly+lh+12).attr(\"text-anchor\",\"end\").text(maxVal);\n  svg.append(\"text\").attr(\"class\",\"legend-label\")\n    .attr(\"x\",lx+lw/2).attr(\"y\",ly-4).attr(\"text-anchor\",\"middle\").text(\"Response count\");\n}})();\n</script>\n</body>\n</html>\"\"\"\n\n    # ------------------------------------------------------------------\n    # 3. Upload to Box\n    # ------------------------------------------------------------------\n    timestamp = datetime.datetime.utcnow().strftime(\"%Y%m%d_%H%M%S\")\n    filename  = f\"county_map_{timestamp}.html\"\n\n    with open(BOX_CONFIG_PATH) as f:\n        box_cfg = boxsdk.JWTAuth.from_settings_dictionary(json.load(f))\n    client  = boxsdk.Client(box_cfg)\n    folder  = client.folder(BOX_FOLDER_ID)\n    stream  = io.BytesIO(html.encode(\"utf-8\"))\n    uploaded = folder.upload_stream(stream, filename)\n\n    box_path = f\"box://{BOX_FOLDER_ID}/{uploaded.id}/{filename}\"\n\n    return {\n        \"records\":  records,\n        \"map_path\": box_path,\n    }\n"
+}

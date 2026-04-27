@@ -1,0 +1,40 @@
+# Production overlay — use with:
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml --env-file .env.production up -d --build
+#
+# Requires .env.production (see .env.production.example). Later keys override .env when both exist.
+
+services:
+  backend:
+    # Override for registry push, e.g. BACKEND_IMAGE=registry.example.edu/research-workflow-backend:v1.0.0
+    image: ${BACKEND_IMAGE:-research-workflow-backend:latest}
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    env_file:
+      - path: .env.production
+        required: false
+    environment:
+      NO_RELOAD: "1"
+      DATASTORE: mariadb
+      DATABASE_URL: ${DATABASE_URL:-mysql://pipeline:pipeline@db:3306/pipeline_db}
+      CUSTOM_COMPONENTS_DIR: /app/backend/custom_components
+      # Secure session cookies; set FRONTEND_URL to https://lnpiapp.med.umn.edu (or your host)
+      HTTPS: "1"
+      BYPASS_AUTH_DEV: "0"
+
+  frontend:
+    image: ${FRONTEND_IMAGE:-research-workflow-frontend:latest}
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+    ports:
+      # Bind only on loopback if a host reverse proxy handles TLS (recommended):
+      #   FRONTEND_PUBLISH=127.0.0.1:48722:80 docker compose ...
+      - "${FRONTEND_PUBLISH:-0.0.0.0:48722:80}"
+
+  db:
+    environment:
+      MARIADB_ROOT_PASSWORD: ${MARIADB_ROOT_PASSWORD:-root}
+      MARIADB_DATABASE: ${MARIADB_DATABASE:-pipeline_db}
+      MARIADB_USER: ${MARIADB_USER:-pipeline}
+      MARIADB_PASSWORD: ${MARIADB_PASSWORD:-pipeline}

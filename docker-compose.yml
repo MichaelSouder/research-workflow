@@ -1,0 +1,61 @@
+services:
+  db:
+    image: mariadb:11
+    container_name: research-workflow-db
+    restart: unless-stopped
+    environment:
+      MARIADB_ROOT_PASSWORD: root
+      MARIADB_DATABASE: pipeline_db
+      MARIADB_USER: pipeline
+      MARIADB_PASSWORD: pipeline
+    volumes:
+      - mariadb_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    container_name: research-workflow-backend
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    env_file:
+      - .env
+    environment:
+      BACKEND_PORT: 48721
+      NO_RELOAD: "1"
+      DATASTORE: mariadb
+      DATABASE_URL: mysql://pipeline:pipeline@db:3306/pipeline_db
+      CUSTOM_COMPONENTS_DIR: /app/backend/custom_components
+      FRONTEND_URL: http://localhost:48722
+      SESSION_SECRET: change-me-in-production
+      BYPASS_AUTH_DEV: "1"
+      # Set for OAuth flows:
+      # GOOGLE_CLIENT_ID: your-client-id
+      # GOOGLE_CLIENT_SECRET: your-client-secret
+    volumes:
+      - ./backend/custom_components:/app/backend/custom_components
+      - ./backend/workspace:/app/backend/workspace
+    ports:
+      # Override in .env / .env.production, e.g. 127.0.0.1:48721:48721 on servers behind a reverse proxy
+      - "${BACKEND_PUBLISH:-0.0.0.0:48721:48721}"
+
+  frontend:
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+    container_name: research-workflow-frontend
+    restart: unless-stopped
+    depends_on:
+      - backend
+    ports:
+      - "48722:80"
+
+volumes:
+  mariadb_data:
