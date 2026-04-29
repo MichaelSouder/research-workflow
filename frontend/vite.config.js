@@ -56,6 +56,11 @@ function mergedRepoEnv(repoRoot, mode) {
 export default defineConfig(({ mode }) => {
   const repoRoot = path.resolve(__dirname, '..')
   const rootEnv = mergedRepoEnv(repoRoot, mode)
+  const appBasePathRaw = rootEnv.VITE_APP_BASE_PATH || process.env.VITE_APP_BASE_PATH || '/'
+  const appBasePath = appBasePathRaw.startsWith('/')
+    ? appBasePathRaw
+    : `/${appBasePathRaw}`
+  const appBase = appBasePath.endsWith('/') ? appBasePath : `${appBasePath}/`
   const backendPort =
     rootEnv.BACKEND_PORT || process.env.BACKEND_PORT || DEFAULT_BACKEND_PORT
   const frontendPort =
@@ -69,6 +74,7 @@ export default defineConfig(({ mode }) => {
   }
 
   return {
+    base: appBase,
     // Client `import.meta.env` (VITE_*): load from repo root
     envDir: repoRoot,
     plugins: [react(), tailwindcss()],

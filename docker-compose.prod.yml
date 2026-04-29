@@ -28,6 +28,8 @@ services:
     build:
       context: .
       dockerfile: frontend/Dockerfile
+      args:
+        VITE_APP_BASE_PATH: ${VITE_APP_BASE_PATH:-/}
     ports:
       # Bind only on loopback if a host reverse proxy handles TLS (recommended):
       #   FRONTEND_PUBLISH=127.0.0.1:48722:80 docker compose ...

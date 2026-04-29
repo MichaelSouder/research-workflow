@@ -12,8 +12,14 @@ export function normalizeBackendBase(raw) {
   return s
 }
 
+function inferAppBasePath() {
+  const raw = String((typeof import.meta !== 'undefined' && import.meta.env?.BASE_URL) || '/')
+  const withNoTrailing = raw.endsWith('/') ? raw.slice(0, -1) : raw
+  return withNoTrailing === '/' ? '' : withNoTrailing
+}
+
 export const BACKEND_BASE = normalizeBackendBase(
-  (typeof import.meta !== 'undefined' && import.meta.env?.VITE_BACKEND_URL) || ''
+  (typeof import.meta !== 'undefined' && import.meta.env?.VITE_BACKEND_URL) || inferAppBasePath()
 )
 
 export const API = `${BACKEND_BASE}/api`

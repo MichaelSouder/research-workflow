@@ -23,10 +23,16 @@ class ErrorBoundary extends Component {
   }
 }
 
+function routerBaseName() {
+  const raw = String(import.meta.env.BASE_URL || '/')
+  const normalized = raw.endsWith('/') ? raw.slice(0, -1) : raw
+  return normalized || '/'
+}
+
 createRoot(document.getElementById('root')).render(
   <StrictMode>
     <ErrorBoundary>
-      <BrowserRouter>
+      <BrowserRouter basename={routerBaseName()}>
         {/* Outside App so Vite Fast Refresh on App.jsx does not remount AuthProvider / break useAuth */}
         <AuthProvider>
           <App />
