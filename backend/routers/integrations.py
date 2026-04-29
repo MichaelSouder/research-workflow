@@ -190,22 +190,33 @@ def download_claude_bundle(
     base = _public_tool_api_base()
 
     bridge_src = (_BUNDLE_DIR / "bridge_stdio.py").read_text(encoding="utf-8")
+    launcher_src = (_BUNDLE_DIR / "launcher.py").read_text(encoding="utf-8")
+    install_src = (_BUNDLE_DIR / "install_bundle.py").read_text(encoding="utf-8")
     readme = f"""# Research Workflow — Claude Desktop (MCP bridge)
 
-This folder runs a small MCP server that forwards tool calls to your deployment’s HTTP tool API.
+Small MCP server that forwards tool calls to your deployment’s HTTP tool API (`{base}`).
 
-## Prerequisites
+## Quick install (macOS / Linux)
 
-- Python 3.10+
-- Install dependencies: `pip install -r requirements-bridge.txt`
+1. **Unzip** this folder to a stable path you keep (not a transient Downloads-only copy), e.g.  
+   `~/research-workflow-claude-mcp`
+2. **Install Python deps** (use a venv if you like):
 
-## Claude Desktop (macOS)
+   ```bash
+   cd research-workflow-claude
+   python3 -m pip install -r requirements-bridge.txt
+   ```
 
-1. Install dependencies in this folder (use a venv if you prefer).
-2. Merge `claude_desktop_config.fragment.json` into your Claude config file, or copy the `mcpServers` entry:
+3. **Generate the Claude config snippet** (fills in absolute paths — avoids “file not found” when Claude starts MCP with the wrong working directory):
+
+   ```bash
+   python3 install_bundle.py
+   ```
+
+4. Open **`claude_desktop_config.fragment.json`** (created in this folder). Copy the **`mcpServers`** object into Claude Desktop → Settings → Developer → Edit config, or merge into:
    - macOS: `~/Library/Application Support/Claude/claude_desktop_config.json`
-3. Adjust `command` / `args` in that JSON if `python3` is not on your PATH (use the full path to the interpreter where you installed deps).
-4. Restart Claude Desktop.
+5. If **`python3`** is not the interpreter where you installed deps, edit **`command`** in the fragment to the full path (run `which python3`).
+6. **Restart Claude Desktop.**
 
 ## URLs
 
@@ -214,7 +225,7 @@ This folder runs a small MCP server that forwards tool calls to your deployment�
 
 ## Security
 
-The API key in this bundle is sensitive. Do not commit this folder to git or share it.
+The API key in `claude_desktop_config.fragment.template.json` / generated fragment is sensitive. Do not commit this folder to git or share it.
 
 Sensitive tool responses are masked **on the server** according to your account’s “Tool API data proxy” setting (Platform admin can change it).
 """
@@ -226,12 +237,14 @@ Sensitive tool responses are masked **on the server** according to your account�
         "RW_API_KEY": token,
         "RW_TOOL_NAMES_JSON": names_json,
     }
-    fragment = {
+    # Placeholder replaced by install_bundle.py so cwd/args use this folder’s absolute path.
+    _bundle_placeholder = "__BUNDLE_DIR__"
+    fragment_template = {
         "mcpServers": {
             "research-workflow": {
                 "command": "python3",
-                "args": ["-u", "bridge_stdio.py"],
-                "cwd": ".",
+                "args": ["-u", f"{_bundle_placeholder}/launcher.py"],
+                "cwd": _bundle_placeholder,
                 "env": env_block,
             }
         }
@@ -242,9 +255,11 @@ Sensitive tool responses are masked **on the server** according to your account�
         zf.writestr("research-workflow-claude/README.md", readme)
         zf.writestr("research-workflow-claude/requirements-bridge.txt", req_txt)
         zf.writestr("research-workflow-claude/bridge_stdio.py", bridge_src)
+        zf.writestr("research-workflow-claude/launcher.py", launcher_src)
+        zf.writestr("research-workflow-claude/install_bundle.py", install_src)
         zf.writestr(
-            "research-workflow-claude/claude_desktop_config.fragment.json",
-            json.dumps(fragment, indent=2),
+            "research-workflow-claude/claude_desktop_config.fragment.template.json",
+            json.dumps(fragment_template, indent=2),
         )
     buf.seek(0)
     filename = "research-workflow-claude-mcp-bundle.zip"

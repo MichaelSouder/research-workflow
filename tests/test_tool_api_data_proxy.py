@@ -1,5 +1,8 @@
 """HTTP /v1/tools/invoke respects per-owner tool_api_data_proxy_enabled."""
 
+import io
+import zipfile
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -196,5 +199,12 @@ def test_integration_bundle_rejects_wrong_secret(memory_store, monkeypatch):
             )
         assert r_ok.status_code == 200
         assert r_ok.headers.get("content-type", "").startswith("application/zip")
+        zf = zipfile.ZipFile(io.BytesIO(r_ok.content))
+        names = zf.namelist()
+        assert "research-workflow-claude/launcher.py" in names
+        assert "research-workflow-claude/install_bundle.py" in names
+        assert "research-workflow-claude/claude_desktop_config.fragment.template.json" in names
+        tmpl = zf.read("research-workflow-claude/claude_desktop_config.fragment.template.json").decode()
+        assert "__BUNDLE_DIR__" in tmpl
     finally:
         app.dependency_overrides.pop(get_current_user, None)

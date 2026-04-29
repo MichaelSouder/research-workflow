@@ -315,6 +315,9 @@ export default function IntegrationsPage() {
                         'Download Claude bundle (zip)'
                       )}
                     </Button>
+                    <p className="text-xs text-muted-foreground">
+                      After unzip: run <code className="rounded bg-muted px-1 py-0.5 font-mono text-[0.7rem]">python3 install_bundle.py</code> in the folder so Claude gets absolute paths (see README in the zip).
+                    </p>
                   </>
                 )}
               </CardContent>
