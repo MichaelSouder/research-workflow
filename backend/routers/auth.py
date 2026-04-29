@@ -30,6 +30,7 @@ GOOGLE_CLIENT_SECRET_ENV = "GOOGLE_CLIENT_SECRET"
 SESSION_TTL_DAYS = 7
 BYPASS_AUTH_DEV_ENV = "BYPASS_AUTH_DEV"
 SUPERUSER_EMAILS_ENV = "SUPERUSER_EMAILS"
+GOOGLE_ALLOWED_EMAIL_DOMAINS_ENV = "GOOGLE_ALLOWED_EMAIL_DOMAINS"
 DEV_USER_GOOGLE_ID = "dev-bypass-local"
 DEV_USER_EMAIL = "dev@local"
 DEV_USER_NAME = "Dev User"
@@ -199,6 +200,22 @@ def _ensure_user_has_study(store: Datastore, user: User) -> None:
     any_study = store.get_any_study()
     if any_study:
         store.set_user_study_role(user.id, any_study.id, STUDY_ROLE_EDITOR)
+
+
+def _email_domain_allowed_for_google(email: str) -> bool:
+    """
+    Restrict Google sign-in to configured domains.
+    Defaults to umn.edu when GOOGLE_ALLOWED_EMAIL_DOMAINS is unset.
+    """
+    addr = (email or "").strip().lower()
+    if "@" not in addr:
+        return False
+    domain = addr.rsplit("@", 1)[1]
+    raw = (os.environ.get(GOOGLE_ALLOWED_EMAIL_DOMAINS_ENV) or "umn.edu").strip()
+    allowed = {d.strip().lower().lstrip("@") for d in raw.split(",") if d.strip()}
+    if not allowed:
+        allowed = {"umn.edu"}
+    return domain in allowed
 
 
 async def get_current_user(
@@ -418,6 +435,12 @@ async def auth_callback(request: Request, response: Response):
     name = userinfo.get("name") or userinfo.get("email") or "User"
     if not google_id:
         raise HTTPException(status_code=400, detail="No Google id in user info")
+    if not _email_domain_allowed_for_google(email):
+        return _oauth_callback_error_page(
+            "Unauthorized account",
+            "Only approved organization email domains may sign in to this app.",
+            status=403,
+        )
 
     store = get_datastore(request)
     by_google = store.get_user_by_google_id(google_id)
